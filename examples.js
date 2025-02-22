@@ -8,7 +8,7 @@ const re1 = ask.then((x) => ask.then((y) => ok(x + y + 1)));
 const re2 = re1.then((x) => ask.then((y) => ok(x * y - 1)));
 
 const handleGet = (e) => ({
-  Get: (msg, kont) => kont.app(e).handle(handleGet(e)), // kont(e).handle(handleGet(e))
+  Get: (msg, kont) => kont.app(e).handle(handleGet(e)),
 });
 
 console.group("Read effects");
@@ -64,7 +64,7 @@ console.log(rwe1.handle(handleGet(2)).handle(handlePut).val);
 console.log(rwe1.handle(handleGet(2)).handle(handlePutConsole).val());
 console.groupEnd();
 
-console.group("R&W Partial handling");
+console.group("Read and write: Partial handling");
 const partially1 = rwe1.handle(handlePutConsole);
 const partially2 = rwe1.handle(handleGet(2));
 console.log(
@@ -89,10 +89,11 @@ class Fail {} // return empty
 const fail = send(new Fail());
 class Flip {} // return 0 or 1
 const flip = send(new Flip());
+const flipThen = (f) => sendThen(new Flip(), f);
 const choose = (xs) =>
-  xs.reduce((acc, x) => flip.then((b) => (b ? ok(x) : acc)), fail);
+  xs.reduce((acc, x) => flipThen((b) => (b ? ok(x) : acc)), fail);
 
-const drunkenCoin = flip.then((b) => (b ? choose([true, false]) : fail));
+const drunkenCoin = flipThen((b) => (b ? choose([true, false]) : fail));
 const drunkenCoins = (n) => collect(Array(n).fill(drunkenCoin));
 
 const handleChoose = {
@@ -111,4 +112,71 @@ const handleChoose = {
 };
 console.group("Nondeterminism");
 console.log(drunkenCoins(10).handle(handleChoose).val);
+console.groupEnd();
+
+const mplus = (e1, e2) => flipThen((b) => (b ? e1 : e2));
+const msum = (es) => es.reduce(mplus);
+const msplit = (e) => {
+  const loop = (jq, e) =>
+    e.handle({
+      Ok: (x) => ok([x, jq.length === 0 ? fail : msum(jq)]),
+      Fail: (msg, kont) =>
+        jq.length === 0 ? ok(undefined) : loop(jq.slice(1), jq[0]),
+      Flip: (msg, kont) => loop([kont.app(false), ...jq], kont.app(true)),
+    });
+  return loop([], e);
+};
+const ifte = (t, th, el) =>
+  msplit(t).then((x) => {
+    if (x === undefined) return el;
+    const [sg1, sg2] = x;
+    return mplus(th(sg1), sg2.then(th));
+  });
+const once = (m) => msplit(m).then((x) => (x === undefined ? fail : ok(x[0])));
+const guard = (b) => (b ? ok(undefined) : fail);
+
+const range = (a, b) => {
+  const acc = [];
+  for (let i = a; i <= b; i++) acc.push(i);
+  return acc;
+};
+const gen = (n) => msum(range(2, n).map(ok));
+const primeIfte1 = gen(30).then((n) =>
+  ifte(
+    once(
+      gen(30).then((d) =>
+        seq(
+          guard(d < n && n % d === 0),
+          tell(`${n} % ${d} === ${n % d}`)
+        )
+      )
+    ),
+    () => fail,
+    ok(n)
+  )
+);
+const primeIfte2 = gen(15).then((n) =>
+  ifte(
+    gen(15).then((d) =>
+      seq(
+        guard(d < n && n % d === 0),
+        guard(n % d === 0),
+        tell(`${n} % ${d} === ${n % d}`)
+      )
+    ),
+    () => fail,
+    ok(n)
+  )
+);
+console.group("Non-deterministic if-then-else and once + write");
+console.log(
+  "%cWith short-circuiting, only one d for each n.",
+  "font-style: italic;"
+);
+console.log(primeIfte1.handle(handleChoose).handle(handlePutConsole).val());
+console.log(
+  "%cWithout short-circuiting, all ds are printed.",
+  "font-style: italic;"
+);
+console.log(primeIfte2.handle(handleChoose).handle(handlePutConsole).val());
 console.groupEnd();

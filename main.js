@@ -1,8 +1,20 @@
-// queue with constant time push, pop and (amortized) append as kontinuation function
-class Leaf {
+// (c) 2025 by Chenxuan Huang
+// This code is licensed under MIT license (see LICENSE.txt for details)
+
+// the continuation is represented as a queue
+// constant time push, append and (amortized) pop(view)
+class Kont {
+  append(k) {
+    console.assert(k instanceof Kont);
+    return new Node(this, k);
+  }
+  pipe(f) {
+    return (a) => f(this.app(a));
+  }
+}
+class Leaf extends Kont {
   constructor(value) {
-    if (!(value instanceof Function))
-      throw new Error("Leaf: value should be a function.");
+    super();
     this.value = value;
   }
   tilt(t, many) {
@@ -15,8 +27,9 @@ class Leaf {
     return this.value(x);
   }
 }
-class Node {
+class Node extends Kont {
   constructor(left, right) {
+    super();
     this.left = left;
     this.right = right;
   }
@@ -27,14 +40,15 @@ class Node {
     return this.left.tilt(this.right, obj.Many);
   }
   app(x) {
-    return this.left.tilt(this.right, (k, t) => k(x).kthen(t)); // inlined this.view
+    return this.left.tilt(this.right, (k, t) => k(x).kthen(t)); // inlined this.view({Many: ...})
   }
 }
-const leaf = (x) => new Leaf(x);
-const push = (t, x) => new Node(t, leaf(x));
-const append = (t1, t2) => new Node(t1, t2);
-const kComp = (k, f) => (a) => f(k.app(a));
+const leaf = (x) => {
+  console.assert(x instanceof Function);
+  return new Leaf(x);
+};
 
+// Effectful computations
 class Ok {
   constructor(val) {
     this.val = val;
@@ -50,45 +64,46 @@ class Ok {
     else return this;
   }
 }
-const ok = (x) => new Ok(x);
-
 class Perform {
   constructor(message, kont) {
+    this.name = message.constructor.name;
     this.message = message;
-    if (!(kont instanceof Leaf) && !(kont instanceof Node))
-      throw new Error(
-        "Perform: kont should be a tree. Use leaf to wrap a function into a tree."
-      );
     this.kont = kont;
   }
   kthen(k) {
-    return new Perform(this.message, append(this.kont, k));
+    return new Perform(this.message, this.kont.append(k));
   }
   then(f) {
-    return new Perform(this.message, push(this.kont, f));
+    console.assert(f instanceof Function);
+    return new Perform(this.message, this.kont.append(new Leaf(f)));
   }
   handle(handlers) {
-    const name = this.message.constructor.name;
+    const name = this.name;
     if (handlers.hasOwnProperty(name))
       return handlers[name](this.message, this.kont); // handle effect
     else
       return new Perform(
         this.message,
-        leaf(kComp(this.kont, (e) => e.handle(handlers)))
+        new Leaf(this.kont.pipe((e) => e.handle(handlers)))
       ); // propagate handlers
   }
 }
-const perform = (message, kont) => new Perform(message, kont);
-const send = (message) => perform(message, leaf(ok));
-const sendThen = (message, then) => perform(message, leaf(then));
+const ok = (x) => new Ok(x);
+const perform = (message, kont) => {
+  console.assert(kont instanceof Kont);
+  return new Perform(message, kont);
+};
 
+// helpers
+const send = (message) => perform(message, new Leaf(ok));
+const sendThen = (message, then) => perform(message, leaf(then)); // implicit check here
 const seq = (...es) =>
   es.reduce((acc, eOrf) => {
     if (eOrf instanceof Function) return acc.then(eOrf);
     if (eOrf instanceof Perform || eOrf instanceof Ok)
       return acc.then(() => eOrf);
     throw new Error(
-      "seq: arguments should be (Perform | Ok) or (Any -> Perform | Ok)."
+      "arguments should be (Perform | Ok) or (Any -> Perform | Ok)."
     );
   });
 const collect = (es) =>
