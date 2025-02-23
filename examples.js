@@ -1,9 +1,8 @@
-// examples
+import { send, sendThen, ok, seq, collect } from "./fe.js";
 
+// read effects
 class Get {}
-
 const ask = send(new Get());
-
 const re1 = ask.then((x) => ask.then((y) => ok(x + y + 1)));
 const re2 = re1.then((x) => ask.then((y) => ok(x * y - 1)));
 
@@ -16,6 +15,7 @@ console.log(re1.handle(handleGet(2)).val);
 console.log(re2.handle(handleGet(2)).val);
 console.groupEnd();
 
+// write effects
 class Put {
   constructor(val) {
     this.val = val;
@@ -55,6 +55,7 @@ console.log(
 );
 console.groupEnd();
 
+// read and write
 const rwe1 = seq(tell("about to read"), re2, (x) =>
   seq(tell(x), tell("end"), ok(x))
 );
@@ -75,6 +76,7 @@ console.log(partially1.handle(handleGet(2)).val());
 console.log(partially2.handle(handlePutConsole).val());
 console.groupEnd();
 
+// state effects: multiple effects at once
 const handleState = (e) => ({
   Get: (msg, kont) => kont.app(e).handle(handleState(e)),
   Put: (msg, kont) => kont.app(msg.val).handle(handleState(msg.val)),
@@ -85,9 +87,9 @@ console.log(se1.handle(handleState(0)).val);
 console.groupEnd();
 
 // nondeterminism
-class Fail {} // return empty
+class Fail {} // this branch fails
 const fail = send(new Fail());
-class Flip {} // return 0 or 1
+class Flip {} // two branches, return 0 and 1
 const flip = send(new Flip());
 const flipThen = (f) => sendThen(new Flip(), f);
 const choose = (xs) =>
@@ -145,10 +147,7 @@ const primeIfte1 = gen(30).then((n) =>
   ifte(
     once(
       gen(30).then((d) =>
-        seq(
-          guard(d < n && n % d === 0),
-          tell(`${n} % ${d} === ${n % d}`)
-        )
+        seq(guard(d < n && n % d === 0), tell(`${n} % ${d} === ${n % d}`))
       )
     ),
     () => fail,

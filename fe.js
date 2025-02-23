@@ -74,8 +74,7 @@ class Perform {
     return new Perform(this.message, this.kont.append(k));
   }
   then(f) {
-    console.assert(f instanceof Function);
-    return new Perform(this.message, this.kont.append(new Leaf(f)));
+    return new Perform(this.message, this.kont.append(leaf(f)));
   }
   handle(handlers) {
     const name = this.name;
@@ -94,9 +93,9 @@ const perform = (message, kont) => {
   return new Perform(message, kont);
 };
 
-// helpers
+// combinators
 const send = (message) => perform(message, new Leaf(ok));
-const sendThen = (message, then) => perform(message, leaf(then)); // implicit check here
+const sendThen = (message, then) => perform(message, leaf(then));
 const seq = (...es) =>
   es.reduce((acc, eOrf) => {
     if (eOrf instanceof Function) return acc.then(eOrf);
@@ -111,3 +110,5 @@ const collect = (es) =>
     (acc, e) => e.then((x) => acc.then((xs) => ok([...xs, x]))),
     ok([])
   );
+
+export { ok, perform, send, sendThen, seq, collect };
