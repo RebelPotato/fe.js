@@ -63,7 +63,11 @@ class Ok {
     if (handlers.hasOwnProperty("Ok")) return handlers["Ok"](this.val);
     else return this;
   }
+  propagate(handlers) {
+    return this;
+  }
 }
+const isOk = (x) => x instanceof Ok;
 class Perform {
   constructor(message, kont) {
     this.name = message.constructor.name;
@@ -80,11 +84,13 @@ class Perform {
     const name = this.name;
     if (handlers.hasOwnProperty(name))
       return handlers[name](this.message, this.kont); // handle effect
-    else
-      return new Perform(
-        this.message,
-        new Leaf(this.kont.pipe((e) => e.handle(handlers)))
-      ); // propagate handlers
+    else return this.propagate(handlers);
+  }
+  propagate(handlers) {
+    return new Perform(
+      this.message,
+      new Leaf(this.kont.pipe((e) => e.propagate(handlers)))
+    );
   }
 }
 const ok = (x) => new Ok(x);
@@ -94,6 +100,8 @@ const perform = (message, kont) => {
 };
 
 // combinators
+const lift1 = (f) => (e) => e.then((x) => ok(f(x)));
+const lift2 = (f) => (e1, e2) => e1.then((x) => e2.then((y) => ok(f(x, y))));
 const send = (message) => perform(message, new Leaf(ok));
 const sendThen = (message, then) => perform(message, leaf(then));
 const seq = (...es) =>
@@ -111,4 +119,4 @@ const collect = (es) =>
     ok([])
   );
 
-export { ok, perform, send, sendThen, seq, collect };
+export { isOk, lift1, lift2, ok, perform, send, sendThen, seq, collect };
